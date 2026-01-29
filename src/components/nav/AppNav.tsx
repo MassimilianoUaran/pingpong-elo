@@ -10,16 +10,28 @@ export default async function AppNav() {
   let pendingCount = 0;
 
   if (user) {
+    // stagione attiva (serve per badge “pulito”)
+    const nowIso = new Date().toISOString();
+    const { data: season } = await supabase
+      .from("seasons")
+      .select("id, name")
+      .lte("starts_at", nowIso)
+      .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
+      .order("starts_at", { ascending: false })
+      .limit(1)
+      .single();
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("player_id")
       .eq("user_id", user.id)
       .single();
 
-    if (profile?.player_id) {
+    if (season?.id && profile?.player_id) {
       const { count } = await supabase
         .from("matches")
         .select("id", { count: "exact", head: true })
+        .eq("season_id", season.id)
         .eq("status", "pending")
         .or(`player_a.eq.${profile.player_id},player_b.eq.${profile.player_id}`)
         .neq("created_by_player", profile.player_id);
@@ -54,23 +66,17 @@ export default async function AppNav() {
               <Link className="hover:underline" href="/matches/disputed">Dispute</Link>
             </>
           ) : (
-            <>
-              <Link className="hover:underline" href="/login">Login</Link>
-            </>
+            <Link className="hover:underline" href="/login">Login</Link>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          {user ? (
-            <form action="/auth/signout" method="post">
-              <button className="border rounded-md px-3 py-2 hover:bg-black/5">
-                Logout
-              </button>
-            </form>
-          ) : (
-            <span className="opacity-60">—</span>
-          )}
-        </div>
+        {user ? (
+          <form action="/auth/signout" method="post">
+            <button className="border rounded-md px-3 py-2 hover:bg-black/5">Logout</button>
+          </form>
+        ) : (
+          <span className="opacity-60">—</span>
+        )}
       </div>
     </div>
   );

@@ -1,12 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/browser";
 
-type Player = { id: string; display_name: string };
-type MatchFeedRow = {
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+
+type Row = {
   id: string;
   played_at: string;
   created_at: string;
@@ -16,35 +21,21 @@ type MatchFeedRow = {
   player_b_name: string;
   score_a: number;
   score_b: number;
-  delta_a: number | null;
-  delta_b: number | null;
 };
 
 export default function MatchesClient(props: {
-  players: Player[];
-  matches: MatchFeedRow[];
+  seasonName: string;
+  isAdmin: boolean;
+  rows: Row[];
   initialError: string | null;
-  initialPlayer: string | null;
 }) {
+  const supabase = createClient();
   const router = useRouter();
-  const [player, setPlayer] = useState(props.initialPlayer ?? "");
 
-  const playerLabel = useMemo(() => {
-    const p = props.players.find((x) => x.id === player);
-    return p?.display_name ?? "";
-  }, [player, props.players]);
-
-  function applyFilter() {
-    const url = player ? `/matches?player=${encodeURIComponent(player)}` : "/matches";
-    router.push(url);
-    router.refresh();
-  }
-
-  function clearFilter() {
-    setPlayer("");
-    router.push("/matches");
-    router.refresh();
-  }
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [voidId, setVoidId] = useState<string | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [loadingId, setLoadingId] = useState<string | null>(null);
 
   function fmt(iso: string) {
     try {
@@ -54,95 +45,93 @@ export default function MatchesClient(props: {
     }
   }
 
-  function deltaBadge(d: number | null) {
-    if (d === null || d === undefined) return <Badge variant="secondary">Δ ?</Badge>;
-    if (d > 0) return <Badge>+{d}</Badge>;
-    if (d < 0) return <Badge variant="destructive">{d}</Badge>;
-    return <Badge variant="secondary">0</Badge>;
+  function openVoid(id: string) {
+    setVoidId(id);
+    setVoidReason("Errore inserimento / da rimuovere");
+    setVoidOpen(true);
+  }
+
+  async function doVoid() {
+    if (!voidId) return;
+
+    setLoadingId(voidId);
+    const { error } = await supabase.rpc("admin_void_match", {
+      p_match_id: voidId,
+      p_reason: voidReason,
+    });
+    setLoadingId(null);
+    setVoidOpen(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Partita rimossa (void). Elo ricalcolato.");
+    router.refresh();
   }
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Storico partite confermate</CardTitle>
+          <CardTitle>Storico — {props.seasonName}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {props.initialError && (
-            <div className="text-sm opacity-80">{props.initialError}</div>
+            <Alert>
+              <AlertDescription>{props.initialError}</AlertDescription>
+            </Alert>
           )}
 
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <div className="text-xs opacity-70">Filtra per giocatore</div>
-              <select
-                className="border rounded-md p-2 bg-background min-w-[260px]"
-                value={player}
-                onChange={(e) => setPlayer(e.target.value)}
-              >
-                <option value="">Tutti</option>
-                {props.players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.display_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              className="border rounded-md px-3 py-2 text-sm"
-              onClick={applyFilter}
-            >
-              Applica
-            </button>
-
-            <button
-              className="border rounded-md px-3 py-2 text-sm"
-              onClick={clearFilter}
-              disabled={!player}
-            >
-              Reset
-            </button>
-
-            {playerLabel && (
-              <div className="text-sm opacity-70">
-                Mostrando: <b>{playerLabel}</b>
-              </div>
-            )}
-          </div>
-
-          {props.matches.length === 0 ? (
-            <div className="text-sm opacity-70">Nessuna partita trovata.</div>
+          {props.rows.length === 0 ? (
+            <div className="text-sm opacity-70">Nessuna partita confermata in questa stagione.</div>
           ) : (
             <div className="space-y-3">
-              {props.matches.map((m) => (
-                <Card key={m.id} className="border">
-                  <CardContent className="p-4 space-y-2">
-                    <div className="flex items-center justify-between gap-3">
+              {props.rows.map((r) => {
+                const isLoading = loadingId === r.id;
+                return (
+                  <div key={r.id} className="border rounded-md p-4 flex items-start justify-between gap-4">
+                    <div>
                       <div className="font-medium">
-                        {m.player_a_name} <span className="opacity-70">vs</span> {m.player_b_name}
+                        {r.player_a_name} <span className="opacity-70">vs</span> {r.player_b_name}
                       </div>
-                      <div className="text-xs opacity-60">{fmt(m.played_at)}</div>
+                      <div className="text-sm opacity-80">{r.score_a} - {r.score_b}</div>
+                      <div className="text-xs opacity-60">Giocata: {fmt(r.played_at)}</div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm">
-                        Risultato: <b>{m.score_a}</b> - <b>{m.score_b}</b>
-                      </div>
-                      <div className="flex gap-2 items-center">
-                        <span className="text-xs opacity-60">{m.player_a_name}</span>
-                        {deltaBadge(m.delta_a)}
-                        <span className="text-xs opacity-60">{m.player_b_name}</span>
-                        {deltaBadge(m.delta_b)}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    {props.isAdmin && (
+                      <Button variant="outline" onClick={() => openVoid(r.id)} disabled={isLoading}>
+                        {isLoading ? "..." : "Rimuovi (void)"}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={voidOpen} onOpenChange={setVoidOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rimuovi partita (void)</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <div className="text-sm opacity-80">
+              La partita verrà marcata come <b>voided</b> e l’Elo verrà ricalcolato dal suo orario.
+            </div>
+            <Textarea value={voidReason} onChange={(e) => setVoidReason(e.target.value)} />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setVoidOpen(false)}>Annulla</Button>
+            <Button onClick={doVoid} disabled={!voidId}>Conferma rimozione</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,168 +1,123 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
-import EloChart from "@/components/me/EloChart"; // riusiamo il tuo componente esistente
+import { getActiveSeason } from "@/lib/season/server";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import EloChart from "@/components/me/EloChart";
 
 export const dynamic = "force-dynamic";
 
-type Params = { id: string };
-
-export default async function PlayerPage({ params }: { params: Params }) {
+export default async function PlayerPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const season = await getActiveSeason();
   const playerId = params.id;
 
-  const { data: player, error: pErr } = await supabase
-    .from("players")
-    .select("id, display_name")
-    .eq("id", playerId)
-    .single();
+  const { data: player } = await supabase.from("players").select("id, display_name").eq("id", playerId).single();
 
-  if (pErr || !player) {
-    return <div className="text-sm opacity-80">Giocatore non trovato.</div>;
-  }
-
-  const { data: leaderboard } = await supabase
-    .from("v_leaderboard")
-    .select("rank, rating")
+  const { data: pr } = await supabase
+    .from("player_ratings")
+    .select("rating")
+    .eq("season_id", season.id)
     .eq("player_id", playerId)
-    .single();
+    .maybeSingle();
 
-  const { data: stats } = await supabase
-    .from("v_player_stats")
-    .select("matches_played, wins, losses, winrate_pct, last_played_at")
-    .eq("player_id", playerId)
-    .single();
+  const rating = pr?.rating ?? 1000;
 
-  const { data: series } = await supabase
-    .from("v_player_elo_series")
-    .select("played_at, rating")
-    .eq("player_id", playerId)
-    .order("played_at", { ascending: true })
-    .limit(400);
+  // rank
+  const { data: top } = await supabase
+    .from("player_ratings")
+    .select("player_id, rating")
+    .eq("season_id", season.id)
+    .order("rating", { ascending: false })
+    .limit(2000);
 
-  const { data: recent } = await supabase
-    .from("v_match_player_rows")
-    .select("match_id, played_at, opponent_id, opponent_name, player_score, opponent_score, result, delta")
+  const rank = top?.findIndex((r: any) => r.player_id === playerId);
+  const rankLabel = rank === undefined || rank < 0 ? "—" : `#${rank + 1}`;
+
+  // serie elo (season)
+  const { data: hist } = await supabase
+    .from("rating_history")
+    .select("match_id, rating_after, matches(played_at)")
+    .eq("season_id", season.id)
     .eq("player_id", playerId)
+    .limit(4000);
+
+  const series =
+    (hist ?? [])
+      .map((h: any) => ({ played_at: h.matches?.played_at, rating: h.rating_after }))
+      .filter((x: any) => !!x.played_at)
+      .sort((a: any, b: any) => new Date(a.played_at).getTime() - new Date(b.played_at).getTime());
+
+  // ultime partite (season)
+  const { data: matches } = await supabase
+    .from("matches")
+    .select("id, played_at, player_a, player_b, score_a, score_b")
+    .eq("season_id", season.id)
+    .eq("status", "confirmed")
+    .or(`player_a.eq.${playerId},player_b.eq.${playerId}`)
     .order("played_at", { ascending: false })
-    .limit(20);
-
-  const { data: opponents } = await supabase
-    .from("v_player_opponents")
-    .select("opponent_id, opponent_name, matches, wins, losses, winrate_pct")
-    .eq("player_id", playerId)
-    .order("matches", { ascending: false })
     .limit(10);
 
-  function fmt(iso?: string | null) {
-    if (!iso) return "—";
-    try {
-      return new Date(iso).toLocaleString("it-IT", { dateStyle: "medium", timeStyle: "short" });
-    } catch {
-      return iso;
-    }
-  }
+  const oppIds = new Set<string>();
+  (matches ?? []).forEach((m: any) => {
+    oppIds.add(m.player_a);
+    oppIds.add(m.player_b);
+  });
+  const { data: oppPlayers } = oppIds.size
+    ? await supabase.from("players").select("id, display_name").in("id", Array.from(oppIds))
+    : { data: [] as any[] };
+
+  const nameById = new Map((oppPlayers ?? []).map((p: any) => [p.id, p.display_name]));
 
   return (
     <div className="space-y-6">
-      {/* HERO */}
       <Card>
         <CardHeader>
-          <CardTitle>{player.display_name}</CardTitle>
+          <CardTitle>{player?.display_name ?? "Giocatore"} — {season.name}</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-6">
-          <div className="space-y-1">
+        <CardContent className="flex flex-wrap gap-8">
+          <div>
             <div className="text-xs opacity-70">Rank</div>
-            <div className="text-2xl font-semibold">#{leaderboard?.rank ?? "—"}</div>
+            <div className="text-2xl font-semibold">{rankLabel}</div>
           </div>
-
-          <div className="space-y-1">
+          <div>
             <div className="text-xs opacity-70">Elo</div>
-            <div className="text-2xl font-semibold">{leaderboard?.rating ?? 1000}</div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-xs opacity-70">Partite</div>
-            <div className="text-2xl font-semibold">{stats?.matches_played ?? 0}</div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-xs opacity-70">Winrate</div>
-            <div className="text-2xl font-semibold">{stats?.winrate_pct ?? 0}%</div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-xs opacity-70">Ultima partita</div>
-            <div className="text-sm">{fmt(stats?.last_played_at)}</div>
+            <div className="text-2xl font-semibold">{rating}</div>
           </div>
         </CardContent>
       </Card>
 
-      {/* ELO CHART */}
       <Card>
-        <CardHeader>
-          <CardTitle>Andamento Elo</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Andamento Elo</CardTitle></CardHeader>
         <CardContent>
-          <EloChart data={(series ?? []) as any} />
+          <EloChart data={series as any} />
         </CardContent>
       </Card>
 
-      {/* RECENT + H2H */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Ultime partite</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {(recent ?? []).length === 0 ? (
-              <div className="text-sm opacity-70">Nessuna partita.</div>
-            ) : (
-              (recent ?? []).map((m: any) => (
-                <div key={m.match_id} className="border rounded-md p-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{m.opponent_name}</div>
-                    <div className="text-xs opacity-60">{fmt(m.played_at)}</div>
-                    <div className="text-sm">
-                      {m.player_score} - {m.opponent_score} • <b>{m.result}</b>
-                    </div>
-                  </div>
-                  <div className="text-sm font-semibold">
-                    {m.delta === null ? "Δ ?" : (m.delta > 0 ? `+${m.delta}` : `${m.delta}`)}
+      <Card>
+        <CardHeader><CardTitle>Ultime partite</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {!matches?.length ? (
+            <div className="text-sm opacity-70">Nessuna partita in questa stagione.</div>
+          ) : (
+            matches.map((m: any) => {
+              const a = nameById.get(m.player_a) ?? m.player_a.slice(0, 8);
+              const b = nameById.get(m.player_b) ?? m.player_b.slice(0, 8);
+              return (
+                <div key={m.id} className="border rounded-md p-3">
+                  <div className="font-medium">{a} <span className="opacity-70">vs</span> {b}</div>
+                  <div className="text-sm">{m.score_a} - {m.score_b}</div>
+                  <div className="text-xs opacity-60">
+                    {new Date(m.played_at).toLocaleString("it-IT", { dateStyle: "medium", timeStyle: "short" })}
                   </div>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Avversari più frequenti</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {(opponents ?? []).length === 0 ? (
-              <div className="text-sm opacity-70">Nessun dato head-to-head.</div>
-            ) : (
-              (opponents ?? []).map((o: any) => (
-                <div key={o.opponent_id} className="border rounded-md p-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{o.opponent_name}</div>
-                    <div className="text-xs opacity-60">
-                      Match: {o.matches} • W {o.wins} / L {o.losses}
-                    </div>
-                  </div>
-                  <div className="text-sm font-semibold">{o.winrate_pct}%</div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
