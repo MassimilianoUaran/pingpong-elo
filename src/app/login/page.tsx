@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
@@ -9,27 +10,55 @@ import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
   const supabase = createClient();
+  const router = useRouter();
+
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function onSubmit() {
     setMsg(null);
+    setLoading(true);
 
-    if (mode === "signup") {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { display_name: displayName } },
-      });
-      setMsg(error ? error.message : "Registrazione ok. Vai su /me.");
-      return;
+    try {
+      if (mode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { display_name: displayName } },
+        });
+
+        if (error) {
+          setMsg(error.message);
+          return;
+        }
+
+        // Se confirm email è disattivato, di solito hai session subito.
+        // Se è attivato, session può essere null: in quel caso mostriamo info.
+        if (data.session) {
+          router.push("/me");
+          router.refresh();
+          return;
+        }
+
+        setMsg("Registrazione ok. Se la conferma email è attiva, controlla la mail; poi accedi.");
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setMsg(error.message);
+        return;
+      }
+
+      router.push("/me");
+      router.refresh();
+    } finally {
+      setLoading(false);
     }
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setMsg(error ? error.message : "Login ok. Vai su /me.");
   }
 
   return (
@@ -45,23 +74,26 @@ export default function LoginPage() {
               <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
             </div>
           )}
+
           <div className="space-y-2">
             <Label>Email</Label>
             <Input value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
+
           <div className="space-y-2">
             <Label>Password</Label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
 
-          <Button className="w-full" onClick={onSubmit}>
-            {mode === "login" ? "Entra" : "Crea account"}
+          <Button className="w-full" onClick={onSubmit} disabled={loading}>
+            {loading ? "..." : (mode === "login" ? "Entra" : "Crea account")}
           </Button>
 
           <Button
             variant="ghost"
             className="w-full"
             onClick={() => setMode(mode === "login" ? "signup" : "login")}
+            disabled={loading}
           >
             {mode === "login" ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
           </Button>
