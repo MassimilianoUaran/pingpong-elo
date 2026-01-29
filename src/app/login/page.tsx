@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/browser";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
@@ -16,13 +17,10 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit() {
-    setMsg(null);
     setLoading(true);
-
     try {
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
@@ -32,28 +30,28 @@ export default function LoginPage() {
         });
 
         if (error) {
-          setMsg(error.message);
+          toast.error(error.message);
           return;
         }
 
-        // Se confirm email è disattivato, di solito hai session subito.
-        // Se è attivato, session può essere null: in quel caso mostriamo info.
         if (data.session) {
+          toast.success("Registrazione completata");
           router.push("/me");
           router.refresh();
           return;
         }
 
-        setMsg("Registrazione ok. Se la conferma email è attiva, controlla la mail; poi accedi.");
+        toast.info("Registrazione ok. Se la conferma email è attiva, controlla la mail; poi accedi.");
         return;
       }
 
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        setMsg(error.message);
+        toast.error(error.message);
         return;
       }
 
+      toast.success("Login effettuato");
       router.push("/me");
       router.refresh();
     } finally {
@@ -86,7 +84,7 @@ export default function LoginPage() {
           </div>
 
           <Button className="w-full" onClick={onSubmit} disabled={loading}>
-            {loading ? "..." : (mode === "login" ? "Entra" : "Crea account")}
+            {loading ? "..." : mode === "login" ? "Entra" : "Crea account"}
           </Button>
 
           <Button
@@ -97,8 +95,6 @@ export default function LoginPage() {
           >
             {mode === "login" ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
           </Button>
-
-          {msg && <p className="text-sm opacity-80">{msg}</p>}
         </CardContent>
       </Card>
     </div>

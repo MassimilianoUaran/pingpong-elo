@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/browser";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
@@ -12,7 +13,9 @@ type Player = { id: string; display_name: string };
 function nowDatetimeLocal() {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}`;
 }
 
 export default function NewMatchPage() {
@@ -25,7 +28,6 @@ export default function NewMatchPage() {
   const [scoreOpp, setScoreOpp] = useState<number>(7);
 
   const [playedAtLocal, setPlayedAtLocal] = useState<string>(nowDatetimeLocal());
-  const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -35,42 +37,42 @@ export default function NewMatchPage() {
         .select("id, display_name")
         .order("display_name", { ascending: true });
 
-      if (error) setMsg(error.message);
+      if (error) toast.error(error.message);
       setPlayers((data ?? []) as Player[]);
     })();
   }, [supabase]);
 
   async function createMatch() {
-    setMsg(null);
     setSaving(true);
+    try {
+      const playedIso = new Date(playedAtLocal).toISOString();
 
-    // datetime-local -> ISO (timestamptz)
-    const playedIso = new Date(playedAtLocal).toISOString();
+      const { data, error } = await supabase.rpc("create_match", {
+        p_opponent: opponent,
+        p_score_me: scoreMe,
+        p_score_opp: scoreOpp,
+        p_played_at: playedIso,
+      });
 
-    const { data, error } = await supabase.rpc("create_match", {
-      p_opponent: opponent,
-      p_score_me: scoreMe,
-      p_score_opp: scoreOpp,
-      p_played_at: playedIso,
-    });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
 
-    setSaving(false);
-
-    if (error) {
-      setMsg(error.message);
-      return;
+      toast.success("Match creato (pending)");
+      if (data) toast.message(`ID match: ${String(data).slice(0, 8)}…`);
+    } finally {
+      setSaving(false);
     }
-
-    setMsg(`Match creato (pending). ID: ${data}`);
   }
 
   return (
     <div className="max-w-xl">
       <Card>
-        <CardHeader><CardTitle>Nuova partita</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Nuova partita</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
-          {msg && <p className="text-sm opacity-80">{msg}</p>}
-
           <div className="space-y-2">
             <Label>Avversario</Label>
             <select
@@ -80,21 +82,17 @@ export default function NewMatchPage() {
             >
               <option value="">Seleziona…</option>
               {players.map((p) => (
-                <option key={p.id} value={p.id}>{p.display_name}</option>
+                <option key={p.id} value={p.id}>
+                  {p.display_name}
+                </option>
               ))}
             </select>
           </div>
 
           <div className="space-y-2">
             <Label>Data/ora partita</Label>
-            <Input
-              type="datetime-local"
-              value={playedAtLocal}
-              onChange={(e) => setPlayedAtLocal(e.target.value)}
-            />
-            <div className="text-xs opacity-60">
-              Nota: per utenti normali max 48 ore nel passato.
-            </div>
+            <Input type="datetime-local" value={playedAtLocal} onChange={(e) => setPlayedAtLocal(e.target.value)} />
+            <div className="text-xs opacity-60">Nota: per utenti normali max 48 ore nel passato.</div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

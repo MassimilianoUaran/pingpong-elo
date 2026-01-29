@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/browser";
 
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
@@ -63,7 +64,6 @@ export default function MeClient(props: {
   const [savingName, setSavingName] = useState(false);
 
   const [uploading, setUploading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
 
   const initials = useMemo(() => {
     const t = (props.displayName || "Me").trim();
@@ -79,10 +79,9 @@ export default function MeClient(props: {
   }
 
   async function saveDisplayName() {
-    setMsg(null);
     const clean = name.trim();
     if (clean.length < 2 || clean.length > 40) {
-      setMsg("Il nome deve essere lungo 2–40 caratteri.");
+      toast.error("Il nome deve essere lungo 2–40 caratteri.");
       return;
     }
 
@@ -91,57 +90,51 @@ export default function MeClient(props: {
     setSavingName(false);
 
     if (error) {
-      setMsg(error.message);
+      toast.error(error.message);
       return;
     }
 
-    setMsg("Nome aggiornato.");
-    router.refresh(); // ricarica i dati server-side (leaderboard, /players, ecc.)
+    toast.success("Nome aggiornato.");
+    router.refresh();
   }
 
   async function onAvatarSelected(file: File | null) {
     if (!file) return;
-    setMsg(null);
 
     if (!file.type.startsWith("image/")) {
-      setMsg("Seleziona un file immagine (png/jpg/webp).");
+      toast.error("Seleziona un file immagine (png/jpg/webp).");
       return;
     }
     if (file.size > 2 * 1024 * 1024) {
-      setMsg("Immagine troppo grande (max 2MB).");
+      toast.error("Immagine troppo grande (max 2MB).");
       return;
     }
 
     setUploading(true);
 
-    // Path: <userId>/avatar.png  (coerente con policy)
     const filePath = `${props.userId}/avatar.png`;
 
-    const { error: upErr } = await supabase.storage
-      .from("avatars")
-      .upload(filePath, file, { upsert: true });
-
+    const { error: upErr } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
     if (upErr) {
       setUploading(false);
-      setMsg(upErr.message);
+      toast.error(upErr.message);
       return;
     }
 
     const { data: pub } = supabase.storage.from("avatars").getPublicUrl(filePath);
-
-    // cache-busting
     const url = `${pub.publicUrl}?v=${Date.now()}`;
 
+    // Hardening: niente update diretto su profiles, usiamo RPC
     const { error: dbErr } = await supabase.rpc("update_my_avatar_url", { p_url: url });
 
     setUploading(false);
 
     if (dbErr) {
-      setMsg(dbErr.message);
+      toast.error(dbErr.message);
       return;
     }
 
-    setMsg("Avatar aggiornato.");
+    toast.success("Avatar aggiornato.");
     router.refresh();
   }
 
@@ -158,7 +151,6 @@ export default function MeClient(props: {
         <TabsTrigger value="settings">Impostazioni</TabsTrigger>
       </TabsList>
 
-      {/* OVERVIEW */}
       <TabsContent value="overview" className="space-y-6">
         <Card>
           <CardHeader>
@@ -199,7 +191,9 @@ export default function MeClient(props: {
                 <div className="text-xs opacity-70">Da confermare</div>
                 <div className="text-2xl font-semibold">{props.pendingCount}</div>
                 <div className="text-xs opacity-60">
-                  <a className="underline" href="/matches/pending">Apri inbox</a>
+                  <a className="underline" href="/matches/pending">
+                    Apri inbox
+                  </a>
                 </div>
               </div>
             </div>
@@ -234,7 +228,7 @@ export default function MeClient(props: {
                       </div>
                     </div>
                     <div className="text-sm font-semibold">
-                      {m.delta == null ? "Δ ?" : (m.delta > 0 ? `+${m.delta}` : `${m.delta}`)}
+                      {m.delta == null ? "Δ ?" : m.delta > 0 ? `+${m.delta}` : `${m.delta}`}
                     </div>
                   </div>
                 ))
@@ -287,15 +281,12 @@ export default function MeClient(props: {
         </div>
       </TabsContent>
 
-      {/* SETTINGS */}
       <TabsContent value="settings" className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>Impostazioni profilo</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {msg && <div className="text-sm opacity-80">{msg}</div>}
-
             <div className="space-y-2">
               <div className="text-xs opacity-70">Nome visibile (leaderboard incluso)</div>
               <div className="flex gap-2">
@@ -303,9 +294,6 @@ export default function MeClient(props: {
                 <Button onClick={saveDisplayName} disabled={savingName}>
                   {savingName ? "..." : "Salva"}
                 </Button>
-              </div>
-              <div className="text-xs opacity-60">
-                Suggerimento: evita caratteri strani e nomi troppo lunghi.
               </div>
             </div>
 
@@ -326,9 +314,7 @@ export default function MeClient(props: {
                     onChange={(e) => onAvatarSelected(e.target.files?.[0] ?? null)}
                     disabled={uploading}
                   />
-                  <div className="text-xs opacity-60">
-                    PNG/JPG/WEBP • max 2MB
-                  </div>
+                  <div className="text-xs opacity-60">PNG/JPG/WEBP • max 2MB</div>
                 </div>
               </div>
               {uploading && <div className="text-sm opacity-70">Caricamento avatar…</div>}
@@ -337,8 +323,12 @@ export default function MeClient(props: {
             <Separator />
 
             <div className="flex justify-between">
-              <a className="underline text-sm" href="/matches/pending">Vai alle conferme</a>
-              <Button variant="outline" onClick={signOut}>Logout</Button>
+              <a className="underline text-sm" href="/matches/pending">
+                Vai alle conferme
+              </a>
+              <Button variant="outline" onClick={signOut}>
+                Logout
+              </Button>
             </div>
           </CardContent>
         </Card>

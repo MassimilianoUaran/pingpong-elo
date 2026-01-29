@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/browser";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 
 type Player = { id: string; display_name: string };
@@ -39,7 +39,6 @@ export default function PendingClient(props: {
   }, [props.players]);
 
   const [pending, setPending] = useState<MatchRow[]>(props.initialPending);
-  const [msg, setMsg] = useState<string | null>(props.initialError);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const [disputeOpen, setDisputeOpen] = useState(false);
@@ -57,7 +56,7 @@ export default function PendingClient(props: {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setMsg(error.message);
+      toast.error(error.message);
       return;
     }
 
@@ -65,21 +64,17 @@ export default function PendingClient(props: {
   }
 
   async function confirmMatch(id: string) {
-    setMsg(null);
     setLoadingId(id);
-
     const { error } = await supabase.rpc("confirm_match", { p_match_id: id });
-
     setLoadingId(null);
 
     if (error) {
-      setMsg(error.message);
+      toast.error(error.message);
       return;
     }
 
-    // ricalcolo Elo avviene server-side; noi aggiorniamo la lista
     await refetch();
-    setMsg("Confermato! Elo aggiornato.");
+    toast.success("Confermato! Elo aggiornato.");
   }
 
   function openDispute(id: string) {
@@ -91,24 +86,21 @@ export default function PendingClient(props: {
   async function submitDispute() {
     if (!disputeId) return;
 
-    setMsg(null);
     setLoadingId(disputeId);
-
     const { error } = await supabase.rpc("dispute_match", {
       p_match_id: disputeId,
       p_reason: disputeReason,
     });
-
     setLoadingId(null);
     setDisputeOpen(false);
 
     if (error) {
-      setMsg(error.message);
+      toast.error(error.message);
       return;
     }
 
     await refetch();
-    setMsg("Contestazione inviata.");
+    toast.success("Contestazione inviata.");
   }
 
   function fmtDate(iso: string) {
@@ -130,7 +122,11 @@ export default function PendingClient(props: {
           <CardTitle>Partite da confermare</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {msg && <div className="text-sm opacity-80">{msg}</div>}
+          {props.initialError && (
+            <Alert>
+              <AlertDescription>{props.initialError}</AlertDescription>
+            </Alert>
+          )}
 
           {pending.length === 0 ? (
             <div className="text-sm opacity-70">Nessuna partita in attesa della tua conferma.</div>
@@ -160,18 +156,11 @@ export default function PendingClient(props: {
                       </div>
 
                       <div className="flex gap-2 pt-2">
-                        <Button
-                          onClick={() => confirmMatch(m.id)}
-                          disabled={isLoading}
-                        >
+                        <Button onClick={() => confirmMatch(m.id)} disabled={isLoading}>
                           {isLoading ? "..." : "Conferma"}
                         </Button>
 
-                        <Button
-                          variant="outline"
-                          onClick={() => openDispute(m.id)}
-                          disabled={isLoading}
-                        >
+                        <Button variant="outline" onClick={() => openDispute(m.id)} disabled={isLoading}>
                           Contesta
                         </Button>
                       </div>
@@ -202,7 +191,9 @@ export default function PendingClient(props: {
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDisputeOpen(false)}>Annulla</Button>
+            <Button variant="outline" onClick={() => setDisputeOpen(false)}>
+              Annulla
+            </Button>
             <Button onClick={submitDispute} disabled={!disputeId}>
               Invia
             </Button>

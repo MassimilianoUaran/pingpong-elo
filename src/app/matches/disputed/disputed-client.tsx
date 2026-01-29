@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/browser";
 
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 
@@ -34,7 +34,6 @@ export default function DisputedClient(props: {
   const supabase = createClient();
   const router = useRouter();
 
-  const [msg, setMsg] = useState<string | null>(props.initialError);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   // Void dialog
@@ -66,23 +65,21 @@ export default function DisputedClient(props: {
 
   async function adminVoid() {
     if (!voidId) return;
-    setMsg(null);
-    setLoadingId(voidId);
 
+    setLoadingId(voidId);
     const { error } = await supabase.rpc("admin_void_match", {
       p_match_id: voidId,
       p_reason: voidReason,
     });
-
     setLoadingId(null);
     setVoidOpen(false);
 
     if (error) {
-      setMsg(error.message);
+      toast.error(error.message);
       return;
     }
 
-    setMsg("Partita annullata. Elo ricalcolato.");
+    toast.success("Partita annullata. Elo ricalcolato.");
     router.refresh();
   }
 
@@ -103,10 +100,8 @@ export default function DisputedClient(props: {
 
   async function adminCorrect() {
     if (!corrId) return;
-    setMsg(null);
-    setLoadingId(corrId);
 
-    // datetime-local -> Date in locale, convertiamo in ISO
+    setLoadingId(corrId);
     const playedIso = new Date(corrPlayedAt).toISOString();
 
     const { data, error } = await supabase.rpc("admin_correct_match", {
@@ -121,11 +116,12 @@ export default function DisputedClient(props: {
     setCorrOpen(false);
 
     if (error) {
-      setMsg(error.message);
+      toast.error(error.message);
       return;
     }
 
-    setMsg(`Corretto! Nuovo match: ${String(data).slice(0, 8)}… Elo ricalcolato.`);
+    toast.success("Correzione applicata. Elo ricalcolato.");
+    if (data) toast.message(`Nuovo match: ${String(data).slice(0, 8)}…`);
     router.refresh();
   }
 
@@ -136,7 +132,11 @@ export default function DisputedClient(props: {
           <CardTitle>Dispute</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {msg && <div className="text-sm opacity-80">{msg}</div>}
+          {props.initialError && (
+            <Alert>
+              <AlertDescription>{props.initialError}</AlertDescription>
+            </Alert>
+          )}
 
           {!props.isAdmin && (
             <div className="text-sm opacity-70">
@@ -176,18 +176,10 @@ export default function DisputedClient(props: {
 
                       {props.isAdmin && (
                         <div className="flex gap-2 pt-2">
-                          <Button
-                            variant="outline"
-                            onClick={() => openVoid(r.id)}
-                            disabled={isLoading}
-                          >
+                          <Button variant="outline" onClick={() => openVoid(r.id)} disabled={isLoading}>
                             {isLoading ? "..." : "Annulla (void)"}
                           </Button>
-
-                          <Button
-                            onClick={() => openCorrect(r)}
-                            disabled={isLoading}
-                          >
+                          <Button onClick={() => openCorrect(r)} disabled={isLoading}>
                             {isLoading ? "..." : "Correggi"}
                           </Button>
                         </div>
@@ -201,29 +193,21 @@ export default function DisputedClient(props: {
         </CardContent>
       </Card>
 
-      {/* VOID DIALOG */}
       <Dialog open={voidOpen} onOpenChange={setVoidOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Annulla partita</DialogTitle>
           </DialogHeader>
 
-          <Textarea
-            value={voidReason}
-            onChange={(e) => setVoidReason(e.target.value)}
-            placeholder="Motivo annullamento..."
-          />
+          <Textarea value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="Motivo annullamento..." />
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setVoidOpen(false)}>Annulla</Button>
-            <Button onClick={adminVoid} disabled={!voidId}>
-              Conferma void
-            </Button>
+            <Button onClick={adminVoid} disabled={!voidId}>Conferma void</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* CORRECT DIALOG */}
       <Dialog open={corrOpen} onOpenChange={setCorrOpen}>
         <DialogContent>
           <DialogHeader>
@@ -255,9 +239,7 @@ export default function DisputedClient(props: {
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCorrOpen(false)}>Annulla</Button>
-            <Button onClick={adminCorrect} disabled={!corrId}>
-              Applica correzione
-            </Button>
+            <Button onClick={adminCorrect} disabled={!corrId}>Applica correzione</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
