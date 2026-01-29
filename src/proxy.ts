@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -21,7 +21,7 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh session if needed
+  // forza refresh session se serve
   await supabase.auth.getUser();
 
   return response;

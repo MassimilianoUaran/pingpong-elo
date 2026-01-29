@@ -24,16 +24,16 @@ export default function LoginPage() {
         password,
         options: { data: { display_name: displayName } },
       });
-      setMsg(error ? error.message : "Registrazione ok. Controlla email se richiesto.");
+      setMsg(error ? error.message : "Registrazione ok. Vai su /me.");
       return;
     }
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setMsg(error ? error.message : "Login ok. Vai su /me");
+    setMsg(error ? error.message : "Login ok. Vai su /me.");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="min-h-[calc(100vh-70px)] flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{mode === "login" ? "Accedi" : "Registrati"}</CardTitle>
@@ -53,12 +53,19 @@ export default function LoginPage() {
             <Label>Password</Label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
+
           <Button className="w-full" onClick={onSubmit}>
             {mode === "login" ? "Entra" : "Crea account"}
           </Button>
-          <Button variant="ghost" className="w-full" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
+
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => setMode(mode === "login" ? "signup" : "login")}
+          >
             {mode === "login" ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
           </Button>
+
           {msg && <p className="text-sm opacity-80">{msg}</p>}
         </CardContent>
       </Card>

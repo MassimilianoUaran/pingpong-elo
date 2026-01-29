@@ -2,19 +2,23 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
-export default async function Leaderboard() {
-  const supabase = createClient();
+export const dynamic = "force-dynamic";
+
+export default async function LeaderboardPage() {
   const supabase = await createClient();
+
+  const { data, error } = await supabase
     .from("v_leaderboard")
     .select("rank, display_name, rating")
     .order("rank", { ascending: true })
     .limit(50);
 
   return (
-    <div className="p-6">
+    <div className="space-y-6">
       <Card>
         <CardHeader><CardTitle>Classifica</CardTitle></CardHeader>
         <CardContent>
+          {error && <p className="text-sm opacity-80">{error.message}</p>}
           <Table>
             <TableHeader>
               <TableRow>

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 
 type Player = { id: string; display_name: string };
 
-export default function NewMatch() {
+export default function NewMatchPage() {
   const supabase = createClient();
   const [players, setPlayers] = useState<Player[]>([]);
   const [opponent, setOpponent] = useState<string>("");
@@ -19,7 +19,12 @@ export default function NewMatch() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("players").select("id, display_name").order("display_name");
+      const { data, error } = await supabase
+        .from("players")
+        .select("id, display_name")
+        .order("display_name", { ascending: true });
+
+      if (error) setMsg(error.message);
       setPlayers((data ?? []) as Player[]);
     })();
   }, [supabase]);
@@ -30,7 +35,7 @@ export default function NewMatch() {
       p_opponent: opponent,
       p_score_me: scoreMe,
       p_score_opp: scoreOpp,
-      // p_played_at: new Date().toISOString(), // opzionale
+      // p_played_at: new Date().toISOString(), // se vuoi passarlo esplicitamente
     });
 
     if (error) setMsg(error.message);
@@ -38,7 +43,7 @@ export default function NewMatch() {
   }
 
   return (
-    <div className="p-6 max-w-xl">
+    <div className="max-w-xl">
       <Card>
         <CardHeader><CardTitle>Nuova partita</CardTitle></CardHeader>
         <CardContent className="space-y-4">
@@ -67,7 +72,10 @@ export default function NewMatch() {
             </div>
           </div>
 
-          <Button className="w-full" onClick={createMatch}>Salva (pending)</Button>
+          <Button className="w-full" onClick={createMatch} disabled={!opponent}>
+            Salva (pending)
+          </Button>
+
           {msg && <p className="text-sm opacity-80">{msg}</p>}
         </CardContent>
       </Card>
