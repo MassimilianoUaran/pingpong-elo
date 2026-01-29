@@ -17,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a className="hover:underline" href="/matches/pending">Da confermare</a>
             <a className="hover:underline" href="/matches">Storico</a>
             <a className="hover:underline" href="/players">Giocatori</a>
+            <a className="hover:underline" href="/matches/disputed">Dispute</a>
           </div>
         </div>
         <main className="mx-auto max-w-6xl p-4">{children}</main>
