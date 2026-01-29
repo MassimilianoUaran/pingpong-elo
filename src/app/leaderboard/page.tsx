@@ -4,7 +4,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 
 export default async function Leaderboard() {
   const supabase = createClient();
-  const { data } = await supabase
+  const supabase = await createClient();
     .from("v_leaderboard")
     .select("rank, display_name, rating")
     .order("rank", { ascending: true })
