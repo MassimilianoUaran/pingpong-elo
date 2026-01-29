@@ -132,10 +132,7 @@ export default function MeClient(props: {
     // cache-busting
     const url = `${pub.publicUrl}?v=${Date.now()}`;
 
-    const { error: dbErr } = await supabase
-      .from("profiles")
-      .update({ avatar_url: url })
-      .eq("user_id", props.userId);
+    const { error: dbErr } = await supabase.rpc("update_my_avatar_url", { p_url: url });
 
     setUploading(false);
 
