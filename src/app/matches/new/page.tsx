@@ -9,13 +9,24 @@ import { Label } from "@/components/ui/label";
 
 type Player = { id: string; display_name: string };
 
+function nowDatetimeLocal() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function NewMatchPage() {
   const supabase = createClient();
+
   const [players, setPlayers] = useState<Player[]>([]);
   const [opponent, setOpponent] = useState<string>("");
+
   const [scoreMe, setScoreMe] = useState<number>(11);
   const [scoreOpp, setScoreOpp] = useState<number>(7);
+
+  const [playedAtLocal, setPlayedAtLocal] = useState<string>(nowDatetimeLocal());
   const [msg, setMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -31,15 +42,26 @@ export default function NewMatchPage() {
 
   async function createMatch() {
     setMsg(null);
+    setSaving(true);
+
+    // datetime-local -> ISO (timestamptz)
+    const playedIso = new Date(playedAtLocal).toISOString();
+
     const { data, error } = await supabase.rpc("create_match", {
       p_opponent: opponent,
       p_score_me: scoreMe,
       p_score_opp: scoreOpp,
-      // p_played_at: new Date().toISOString(), // se vuoi passarlo esplicitamente
+      p_played_at: playedIso,
     });
 
-    if (error) setMsg(error.message);
-    else setMsg(`Match creato (pending). ID: ${data}`);
+    setSaving(false);
+
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+
+    setMsg(`Match creato (pending). ID: ${data}`);
   }
 
   return (
@@ -47,6 +69,8 @@ export default function NewMatchPage() {
       <Card>
         <CardHeader><CardTitle>Nuova partita</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          {msg && <p className="text-sm opacity-80">{msg}</p>}
+
           <div className="space-y-2">
             <Label>Avversario</Label>
             <select
@@ -61,6 +85,18 @@ export default function NewMatchPage() {
             </select>
           </div>
 
+          <div className="space-y-2">
+            <Label>Data/ora partita</Label>
+            <Input
+              type="datetime-local"
+              value={playedAtLocal}
+              onChange={(e) => setPlayedAtLocal(e.target.value)}
+            />
+            <div className="text-xs opacity-60">
+              Nota: per utenti normali max 48 ore nel passato.
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Tu</Label>
@@ -72,11 +108,9 @@ export default function NewMatchPage() {
             </div>
           </div>
 
-          <Button className="w-full" onClick={createMatch} disabled={!opponent}>
-            Salva (pending)
+          <Button className="w-full" onClick={createMatch} disabled={!opponent || saving}>
+            {saving ? "Salvataggio..." : "Salva (pending)"}
           </Button>
-
-          {msg && <p className="text-sm opacity-80">{msg}</p>}
         </CardContent>
       </Card>
     </div>
