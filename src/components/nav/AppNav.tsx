@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getActiveSeason } from "@/lib/season/server";
+import SeasonSwitcher from "./SeasonSwitcher";
 
 export const dynamic = "force-dynamic";
 
@@ -7,34 +9,37 @@ export default async function AppNav() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
+  const seasonsRes = await supabase
+    .from("seasons")
+    .select("id, name")
+    .order("starts_at", { ascending: false });
+
+  const seasons = (seasonsRes.data ?? []) as { id: string; name: string }[];
+
+  const currentSeason = seasons.length ? await getActiveSeason() : null;
+
   let pendingCount = 0;
+  let isAdmin = false;
+  let myPlayerId: string | null = null;
 
-  if (user) {
-    // stagione attiva (serve per badge “pulito”)
-    const nowIso = new Date().toISOString();
-    const { data: season } = await supabase
-      .from("seasons")
-      .select("id, name")
-      .lte("starts_at", nowIso)
-      .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
-      .order("starts_at", { ascending: false })
-      .limit(1)
-      .single();
-
+  if (user && currentSeason) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("player_id")
+      .select("player_id, is_admin")
       .eq("user_id", user.id)
       .single();
 
-    if (season?.id && profile?.player_id) {
+    myPlayerId = profile?.player_id ?? null;
+    isAdmin = !!profile?.is_admin;
+
+    if (myPlayerId) {
       const { count } = await supabase
         .from("matches")
         .select("id", { count: "exact", head: true })
-        .eq("season_id", season.id)
+        .eq("season_id", currentSeason.id)
         .eq("status", "pending")
-        .or(`player_a.eq.${profile.player_id},player_b.eq.${profile.player_id}`)
-        .neq("created_by_player", profile.player_id);
+        .or(`player_a.eq.${myPlayerId},player_b.eq.${myPlayerId}`)
+        .neq("created_by_player", myPlayerId);
 
       pendingCount = count ?? 0;
     }
@@ -64,19 +69,29 @@ export default async function AppNav() {
               </Link>
 
               <Link className="hover:underline" href="/matches/disputed">Dispute</Link>
+
+              {isAdmin && (
+                <Link className="hover:underline" href="/admin/seasons">Admin stagioni</Link>
+              )}
             </>
           ) : (
             <Link className="hover:underline" href="/login">Login</Link>
           )}
         </div>
 
-        {user ? (
-          <form action="/auth/signout" method="post">
-            <button className="border rounded-md px-3 py-2 hover:bg-black/5">Logout</button>
-          </form>
-        ) : (
-          <span className="opacity-60">—</span>
-        )}
+        <div className="flex items-center gap-3">
+          {!!user && currentSeason && seasons.length > 0 && (
+            <SeasonSwitcher seasons={seasons} currentId={currentSeason.id} />
+          )}
+
+          {user ? (
+            <form action="/auth/signout" method="post">
+              <button className="border rounded-md px-3 py-2 hover:bg-black/5">Logout</button>
+            </form>
+          ) : (
+            <span className="opacity-60">—</span>
+          )}
+        </div>
       </div>
     </div>
   );
