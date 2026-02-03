@@ -71,7 +71,10 @@ export default async function AppNav() {
               <Link className="hover:underline" href="/matches/disputed">Dispute</Link>
 
               {isAdmin && (
+                <>
                 <Link className="hover:underline" href="/admin/seasons">Admin stagioni</Link>
+                <Link className="hover:underline" href="/admin/pending">Admin pending</Link>
+                </>
               )}
             </>
           ) : (
