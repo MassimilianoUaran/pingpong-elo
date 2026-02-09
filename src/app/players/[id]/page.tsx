@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveSeason } from "@/lib/season/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,44 +14,74 @@ export default async function PlayerPage({ params }: { params: { id: string } })
   const season = await getActiveSeason();
   const playerId = params.id;
 
-  const { data: player } = await supabase.from("players").select("id, display_name").eq("id", playerId).single();
+  // Player base
+  const { data: player, error: playerErr } = await supabase
+    .from("players")
+    .select("id, display_name")
+    .eq("id", playerId)
+    .maybeSingle();
 
-  const { data: pr } = await supabase
+  if (playerErr) throw new Error(playerErr.message);
+  if (!player) notFound();
+
+  // Rating corrente (stagione)
+  const { data: pr, error: prErr } = await supabase
     .from("player_ratings")
     .select("rating")
     .eq("season_id", season.id)
     .eq("player_id", playerId)
     .maybeSingle();
 
+  if (prErr) throw new Error(prErr.message);
   const rating = pr?.rating ?? 1000;
 
-  // rank
-  const { data: top } = await supabase
+  // Rank (stagione)
+  const { data: top, error: topErr } = await supabase
     .from("player_ratings")
     .select("player_id, rating")
     .eq("season_id", season.id)
     .order("rating", { ascending: false })
-    .limit(2000);
+    .limit(5000);
 
-  const rank = top?.findIndex((r: any) => r.player_id === playerId);
-  const rankLabel = rank === undefined || rank < 0 ? "—" : `#${rank + 1}`;
+  if (topErr) throw new Error(topErr.message);
 
-  // serie elo (season)
-  const { data: hist } = await supabase
+  const rankIdx = (top ?? []).findIndex((r: any) => r.player_id === playerId);
+  const rankLabel = rankIdx >= 0 ? `#${rankIdx + 1}` : "—";
+
+  // Elo history (robusto: 2 query invece del join annidato)
+  const { data: hist, error: histErr } = await supabase
     .from("rating_history")
-    .select("match_id, rating_after, matches(played_at)")
+    .select("match_id, rating_after")
     .eq("season_id", season.id)
     .eq("player_id", playerId)
     .limit(4000);
 
+  if (histErr) throw new Error(histErr.message);
+
+  const matchIds = Array.from(new Set((hist ?? []).map((h: any) => h.match_id))).filter(Boolean);
+
+  let matchMap = new Map<string, string>(); // match_id -> played_at
+  if (matchIds.length) {
+    const { data: ms, error: msErr } = await supabase
+      .from("matches")
+      .select("id, played_at")
+      .in("id", matchIds);
+
+    if (msErr) throw new Error(msErr.message);
+    matchMap = new Map((ms ?? []).map((m: any) => [m.id, m.played_at]));
+  }
+
   const series =
     (hist ?? [])
-      .map((h: any) => ({ played_at: h.matches?.played_at, rating: h.rating_after }))
+      .map((h: any) => ({
+        played_at: matchMap.get(h.match_id) ?? null,
+        rating: h.rating_after,
+      }))
       .filter((x: any) => !!x.played_at)
       .sort((a: any, b: any) => new Date(a.played_at).getTime() - new Date(b.played_at).getTime());
 
-  // ultime partite (season)
-  const { data: matches } = await supabase
+  // Ultime partite (stagione)
+  const { data: matches, error: mErr } = await supabase
     .from("matches")
     .select("id, played_at, player_a, player_b, score_a, score_b")
     .eq("season_id", season.id)
@@ -60,14 +90,19 @@ export default async function PlayerPage({ params }: { params: { id: string } })
     .order("played_at", { ascending: false })
     .limit(10);
 
+  if (mErr) throw new Error(mErr.message);
+
   const oppIds = new Set<string>();
   (matches ?? []).forEach((m: any) => {
     oppIds.add(m.player_a);
     oppIds.add(m.player_b);
   });
-  const { data: oppPlayers } = oppIds.size
+
+  const { data: oppPlayers, error: oppErr } = oppIds.size
     ? await supabase.from("players").select("id, display_name").in("id", Array.from(oppIds))
-    : { data: [] as any[] };
+    : { data: [] as any[], error: null as any };
+
+  if (oppErr) throw new Error(oppErr.message);
 
   const nameById = new Map((oppPlayers ?? []).map((p: any) => [p.id, p.display_name]));
 
@@ -75,7 +110,7 @@ export default async function PlayerPage({ params }: { params: { id: string } })
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>{player?.display_name ?? "Giocatore"} — {season.name}</CardTitle>
+          <CardTitle>{player.display_name} — {season.name}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-8">
           <div>
@@ -92,7 +127,11 @@ export default async function PlayerPage({ params }: { params: { id: string } })
       <Card>
         <CardHeader><CardTitle>Andamento Elo</CardTitle></CardHeader>
         <CardContent>
-          <EloChart data={series as any} />
+          {series.length === 0 ? (
+            <div className="text-sm opacity-70">Nessun dato Elo in questa stagione.</div>
+          ) : (
+            <EloChart data={series as any} />
+          )}
         </CardContent>
       </Card>
 
